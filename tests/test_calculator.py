@@ -91,12 +91,12 @@ def test_emi_large_principal():
 
 
 def test_emi_raises_on_zero_tenure():
-    with pytest.raises(ValueError, match="tenure must be positive"):
+    with pytest.raises(ValueError, match="tenure_months must be positive"):
         emi(100_000, 9, 0)
 
 
 def test_emi_raises_on_negative_tenure():
-    with pytest.raises(ValueError, match="tenure must be positive"):
+    with pytest.raises(ValueError, match="tenure_months must be positive"):
         emi(100_000, 9, -1)
 
 

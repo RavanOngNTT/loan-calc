@@ -2,8 +2,66 @@ import math
 from datetime import date
 from typing import Optional
 
+from .exceptions import (
+    InvalidPrepaymentError,
+    InvalidPrincipalError,
+    InvalidRateError,
+    InvalidTenureError,
+    UnrepayableLoanError,
+)
 
 DEFAULT_CURRENCY = "INR"
+
+
+# ---------------------------------------------------------------------------
+# Private validation helpers
+# ---------------------------------------------------------------------------
+
+def _check_finite(val: object, name: str) -> float:
+    """Return val as float after checking it is a finite, non-bool number.
+
+    Raises TypeError-like messages via the caller-supplied exception class.
+    This helper raises ValueError subclasses; callers choose the right subclass.
+    """
+    if isinstance(val, bool):
+        raise TypeError(f"{name} must be a number, not bool")
+    if not isinstance(val, (int, float)):
+        raise TypeError(f"{name} must be a number, got {type(val).__name__!r}")
+    if math.isnan(val) or math.isinf(val):
+        raise ValueError(f"{name} must be finite, got {val!r}")
+    return float(val)
+
+
+def _validate_principal(principal: object) -> None:
+    """Raise :class:`InvalidPrincipalError` if principal is not a positive finite number."""
+    try:
+        v = _check_finite(principal, "principal")
+    except (TypeError, ValueError) as exc:
+        raise InvalidPrincipalError(str(exc)) from exc
+    if v <= 0:
+        raise InvalidPrincipalError("principal must be positive")
+
+
+def _validate_rate(annual_rate: object) -> None:
+    """Raise :class:`InvalidRateError` if rate is not a finite number in [0, 100]."""
+    try:
+        v = _check_finite(annual_rate, "annual_rate")
+    except (TypeError, ValueError) as exc:
+        raise InvalidRateError(str(exc)) from exc
+    if v < 0 or v > 100:
+        raise InvalidRateError(f"annual_rate must be in [0, 100], got {v!r}")
+
+
+def _validate_tenure(tenure_months: object) -> None:
+    """Raise :class:`InvalidTenureError` if tenure is not a positive integer."""
+    if isinstance(tenure_months, bool):
+        raise InvalidTenureError("tenure_months must be an integer, not bool")
+    if not isinstance(tenure_months, int):
+        raise InvalidTenureError(
+            f"tenure_months must be an integer, got {type(tenure_months).__name__!r}"
+        )
+    if tenure_months <= 0:
+        raise InvalidTenureError("tenure_months must be positive")
 
 
 def _monthly_rate(annual_rate: float) -> float:
@@ -15,24 +73,27 @@ def emi(principal: float, annual_rate: float, tenure_months: int) -> float:
     """Calculate the fixed monthly instalment (EMI) for a reducing-balance loan.
 
     Uses the standard annuity formula. The monthly rate is derived from
-    ``annual_rate`` via :func:`_monthly_rate` (rounded to 4 decimal places).
-    When the rate is zero the instalment is simply ``principal / tenure_months``.
+    ``annual_rate`` via :func:`_monthly_rate`. When the rate is zero the
+    instalment is simply ``principal / tenure_months``.
 
     Args:
-        principal: Loan amount in the currency of the caller. Must be > 0.
-        annual_rate: Annual interest rate as a percentage (e.g. ``12`` for 12 %).
-        tenure_months: Total number of monthly instalments. Must be > 0.
+        principal: Loan amount in the currency of the caller. Must be a
+            positive finite number.
+        annual_rate: Annual interest rate as a percentage in [0, 100].
+        tenure_months: Total number of monthly instalments. Must be a
+            positive integer.
 
     Returns:
         The fixed monthly EMI rounded to 2 decimal places.
 
     Raises:
-        ValueError: If ``tenure_months <= 0`` or ``principal <= 0``.
+        InvalidPrincipalError: If ``principal`` is not a positive finite number.
+        InvalidRateError: If ``annual_rate`` is not in [0, 100] or is not finite.
+        InvalidTenureError: If ``tenure_months`` is not a positive integer.
     """
-    if tenure_months <= 0:
-        raise ValueError("tenure must be positive")
-    if principal <= 0:
-        raise ValueError("principal must be positive")
+    _validate_principal(principal)
+    _validate_rate(annual_rate)
+    _validate_tenure(tenure_months)
     r = _monthly_rate(annual_rate)
     if r == 0:
         return round(principal / tenure_months, 2)
@@ -171,16 +232,18 @@ def remaining_tenure(balance: float, annual_rate: float, instalment: float) -> i
         Ceiling of the computed number of monthly periods needed.
 
     Raises:
-        ValueError: If ``instalment <= balance * r``, i.e. the instalment is
-            too small to cover the first month's interest.
+        InvalidRateError: If ``annual_rate`` is invalid.
+        UnrepayableLoanError: If ``instalment <= balance * r``, i.e. the
+            instalment is too small to cover the first month's interest.
     """
+    _validate_rate(annual_rate)
     r = annual_rate / 1200
     if balance <= 0:
         return 0
     if r == 0:
         return math.ceil(balance / instalment)
     if instalment <= balance * r:
-        raise ValueError("instalment too small to repay the loan")
+        raise UnrepayableLoanError("instalment too small to repay the loan")
     n = -math.log(1 - balance * r / instalment) / math.log(1 + r)
     return math.ceil(n)
 
@@ -217,6 +280,19 @@ def prepayment_savings(
         * ``interest_paid_before_prepayment`` – cumulative interest up to
           ``prepay_month``, rounded to 2 d.p.
     """
+    _validate_tenure(tenure_months)  # ensure tenure is valid before range check
+    if not isinstance(prepay_month, int) or isinstance(prepay_month, bool):
+        raise InvalidPrepaymentError("prepay_month must be a positive integer")
+    if prepay_month < 1 or prepay_month > tenure_months:
+        raise InvalidPrepaymentError(
+            f"prepay_month must be in [1, {tenure_months}], got {prepay_month!r}"
+        )
+    try:
+        v = _check_finite(prepay_amount, "prepay_amount")
+    except (TypeError, ValueError) as exc:
+        raise InvalidPrepaymentError(str(exc)) from exc
+    if v < 0:
+        raise InvalidPrepaymentError("prepay_amount must be non-negative")
     instalment = emi(principal, annual_rate, tenure_months)
     sched = amortisation_schedule(principal, annual_rate, tenure_months)
     balance = sched[prepay_month - 1]["balance"]
@@ -303,6 +379,8 @@ def eligible_amount(
         Maximum eligible loan amount rounded to 2 decimal places, or ``0.0``
         if ``monthly_income * foir <= existing_emis``.
     """
+    _validate_rate(annual_rate)
+    _validate_tenure(tenure_months)
     available = monthly_income * foir - existing_emis
     if available <= 0:
         return 0.0
