@@ -160,10 +160,7 @@ def remaining_tenure(balance: float, annual_rate: float, instalment: float) -> i
 
         n = -log(1 - balance * r / instalment) / log(1 + r)
 
-    .. warning::
-        ``r`` is computed as ``annual_rate / 100`` (annual decimal), not as
-        a monthly rate. The formula requires a monthly rate; this means the
-        computed tenure is incorrect for any non-zero rate.
+    where ``r`` is the monthly rate (``annual_rate / 1200``).
 
     Args:
         balance: Outstanding principal to be repaid.
@@ -171,15 +168,13 @@ def remaining_tenure(balance: float, annual_rate: float, instalment: float) -> i
         instalment: Fixed monthly payment amount.
 
     Returns:
-        Ceiling of the computed number of periods (using annual rate, not
-        monthly rate — see warning above).
+        Ceiling of the computed number of monthly periods needed.
 
     Raises:
-        ValueError: If ``instalment <= balance * r`` where ``r = annual_rate / 100``,
-            i.e. the instalment is too small to cover even one period's interest
-            at the (incorrectly applied) annual rate.
+        ValueError: If ``instalment <= balance * r``, i.e. the instalment is
+            too small to cover the first month's interest.
     """
-    r = annual_rate / 100
+    r = annual_rate / 1200
     if balance <= 0:
         return 0
     if r == 0:
