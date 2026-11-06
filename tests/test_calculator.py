@@ -77,9 +77,9 @@ def test_emi_zero_rate():
 
 
 def test_emi_one_month_tenure():
-    # r = round(10/1200,4) = 0.0083
-    # emi = 50000*(1+0.0083) = 50415.0
-    assert emi(50_000, 10, 1) == 50415.0
+    # r = 10/1200 (no rounding) = 0.008333...
+    # emi = round(50000*(1+10/1200), 2) = round(50416.6667, 2) = 50416.67
+    assert emi(50_000, 10, 1) == 50416.67
 
 
 def test_emi_large_principal():
@@ -246,13 +246,13 @@ def test_compare_offers_sorted_ascending_by_total_cost():
 
 def test_compare_offers_single_offer_values():
     # offer: rate=10, tenure=120, no fee, principal=500000
-    # r=0.0083, e_a=6596.47, ti=291576.40, fee=0, tc=291576.40
+    # r=10/1200 (no rounding), e=6607.54, ti=round(6607.54*120-500000,2)=292904.80
     offers = [{"bank": "X", "rate": 10.0, "tenure": 120}]
     result = compare_offers(500_000, offers)
-    assert result[0]["emi"] == 6596.47
-    assert result[0]["total_interest"] == 291576.4
+    assert result[0]["emi"] == 6607.54
+    assert result[0]["total_interest"] == 292904.8
     assert result[0]["processing_fee"] == 0.0
-    assert result[0]["total_cost"] == 291576.4
+    assert result[0]["total_cost"] == 292904.8
 
 
 # ---------------------------------------------------------------------------
@@ -262,10 +262,10 @@ def test_compare_offers_single_offer_values():
 def test_eligible_amount_basic():
     # income=100000, existing=10000, rate=10, tenure=120, foir=0.5
     # available = 40000
-    # r=0.0083, f=(1.0083)^120
-    # eligible = round(40000*(f-1)/(0.0083*f), 2) = 3031926.16
+    # r=10/1200 (no rounding), f=(1+10/1200)^120
+    # eligible = round(40000*(f-1)/(r*f), 2) = 3026846.53
     result = eligible_amount(100_000, 10_000, 10, 120)
-    assert result == 3031926.16
+    assert result == 3026846.53
 
 
 def test_eligible_amount_returns_zero_when_obligations_exceed_capacity():
