@@ -83,17 +83,12 @@ def amortisation_schedule(
 ) -> list[dict]:
     """Generate a month-by-month repayment schedule.
 
-    .. note::
-        Due to the loop ``range(1, tenure_months)``, the schedule contains
-        ``tenure_months - 1`` rows; the final month is never appended.
-        The ``if month == tenure_months`` branch inside the loop is therefore
-        dead code and is never executed.
-
     Each row dict has the keys:
 
     * ``month`` – 1-based month number.
-    * ``emi`` – instalment paid that month (equals the standard EMI for all
-      generated rows because the final-month adjustment is unreachable).
+    * ``emi`` – instalment paid that month. For all months except the last
+      this equals the standard EMI; the final month's instalment is adjusted
+      to clear the exact remaining balance.
     * ``interest`` – interest component for that month, rounded to 2 d.p.
     * ``principal`` – principal component for that month, rounded to 2 d.p.
     * ``balance`` – outstanding principal after that payment (floored at 0).
@@ -101,10 +96,11 @@ def amortisation_schedule(
     Args:
         principal: Loan amount. Must be > 0.
         annual_rate: Annual interest rate as a percentage.
-        tenure_months: Intended total number of instalments. Must be > 0.
+        tenure_months: Total number of instalments. Must be > 0.
 
     Returns:
-        List of ``tenure_months - 1`` row dicts (not ``tenure_months`` rows).
+        List of exactly ``tenure_months`` row dicts. The final row has
+        ``balance == 0.0``.
 
     Raises:
         ValueError: Propagated from :func:`emi` if inputs are invalid.
@@ -113,7 +109,7 @@ def amortisation_schedule(
     instalment = emi(principal, annual_rate, tenure_months)
     balance = principal
     rows = []
-    for month in range(1, tenure_months):
+    for month in range(1, tenure_months + 1):
         interest = round(balance * r, 2)
         principal_part = round(instalment - interest, 2)
         if month == tenure_months:
@@ -137,10 +133,7 @@ def outstanding_after(
 ) -> float:
     """Return the outstanding loan balance after a given number of payments.
 
-    Looks up the balance from :func:`amortisation_schedule`. Because that
-    schedule only contains ``tenure_months - 1`` rows, passing
-    ``months_paid == tenure_months`` hits the ``months_paid > len(sched)``
-    guard and returns ``0.0`` rather than the true final balance.
+    Looks up the balance from :func:`amortisation_schedule`.
 
     Args:
         principal: Original loan amount. Must be > 0.
