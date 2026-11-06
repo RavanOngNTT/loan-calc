@@ -223,12 +223,14 @@ def prepayment_savings(
     new_balance = balance - prepay_amount
     if new_balance <= 0:
         months_left = 0
+        effective_prepay = balance  # cap at actual outstanding; excess is not interest
     else:
         months_left = remaining_tenure(new_balance, annual_rate, instalment)
+        effective_prepay = prepay_amount
     original_left = tenure_months - prepay_month
     interest_paid_so_far = sum(row["interest"] for row in sched[:prepay_month])
     original_interest = total_interest(principal, annual_rate, tenure_months)
-    new_total = instalment * prepay_month + prepay_amount + instalment * months_left
+    new_total = instalment * prepay_month + effective_prepay + instalment * months_left
     new_interest = new_total - principal
     return {
         "emi": instalment,
