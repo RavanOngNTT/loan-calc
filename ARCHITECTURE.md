@@ -284,3 +284,7 @@ at the actual outstanding `balance`. Excess payment is returned to the borrower 
 so `last_emi = "2026-04"`. The example was off by one month.
 
 **Verified:** `python -c "from datetime import date; from loan_calc import summary; print(summary(1000000,9,3,start=date(2026,1,1))['last_emi'])"` → `2026-04`.
+
+## Known limitations
+
+`prepayment_savings` estimates the new total paid as EMI × remaining months, treating the last month as a full EMI even when it is smaller. For very small prepayments that do not shorten the loan by a whole month, interest_saved can therefore come out negative (e.g. prepaying ₹1,000 on ₹10L at 9% shows -1,000). Larger prepayments are unaffected in practice.
