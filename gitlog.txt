@@ -1,0 +1,146 @@
+﻿commit 8af249b8ecb6a3f8a2a7570959e2aeb6aeb722fa
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 09:41:55 +0800
+
+    chore: import loan-calc starter code
+
+ .gitignore              |   9 +++
+ README.md               |  29 +++++++++
+ cli.py                  |  26 ++++++++
+ loan_calc/__init__.py   |   1 +
+ loan_calc/calculator.py | 167 ++++++++++++++++++++++++++++++++++++++++++++++++
+ requirements.txt        |   2 +
+ tests/.gitkeep          |   0
+ 7 files changed, 234 insertions(+)
+
+commit 5555b647be14b818c48107b9231be0f5cd7e9bb6
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 14:48:09 +0800
+
+    docs: add ARCHITECTURE.md explaining each function
+
+ ARCHITECTURE.md | 230 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 230 insertions(+)
+
+commit 59fc482abd02d25125059ab53f9525d1b4d0bfa8
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 15:03:26 +0800
+
+    docs: add docstrings and type hints to public functions
+
+ loan_calc/calculator.py | 272 +++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 258 insertions(+), 14 deletions(-)
+
+commit 83e93dd03abfe24912988abef75ba5e1e1b14fe5
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 15:22:10 +0800
+
+    test: add pytest suite incl. edge cases (0%, 1-month, large principal, over-prepayment)
+
+ pytest.ini               |   3 +
+ tests/.gitkeep           |   0
+ tests/test_calculator.py | 344 +++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 347 insertions(+)
+
+commit ed1243f252c2437393265f89cf21377c1bc955da
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 15:26:59 +0800
+
+    fix: stop rounding monthly rate to 4 dp in _monthly_rate
+
+ loan_calc/calculator.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+commit 1186ac8effde9d2bd25f7bc65dda5a19401e05f4
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 15:43:37 +0800
+
+    fix: include final month in amortisation_schedule
+
+ loan_calc/calculator.py | 23 ++++++++---------------
+ 1 file changed, 8 insertions(+), 15 deletions(-)
+
+commit 2b9d2e6c535fc6065eb87ff2b68f137f8da40b15
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:02:42 +0800
+
+    fix: use monthly rate in remaining_tenure
+
+ loan_calc/calculator.py | 15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+commit 3b470d858d10924ff35c036b6c6510f250758906
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:06:47 +0800
+
+    test: correct expected values that used the rounded monthly rate
+
+ tests/test_calculator.py | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+commit b1acac41bf999efcc4a006b6fd9db15ab326290a
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:12:15 +0800
+
+    fix: cap prepayment at outstanding balance
+
+ loan_calc/calculator.py | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+commit 6c1a4147667a3532dc9ff761f248ef50bd961eb0
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:18:35 +0800
+
+    test: cover remaining lines
+
+ tests/test_calculator.py | 63 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 63 insertions(+)
+
+commit b40d310a4c5a5c48596d9f1deb0724c1845a8040
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:33:03 +0800
+
+    feat: add input validation and LoanCalcError exception hierarchy with tests
+
+ loan_calc/__init__.py    |   9 ++
+ loan_calc/calculator.py  | 104 ++++++++++++++++---
+ loan_calc/exceptions.py  |  37 +++++++
+ tests/test_calculator.py |   4 +-
+ tests/test_validation.py | 262 +++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 401 insertions(+), 15 deletions(-)
+
+commit ec9279ae05351ffc2183315394d85fbe5a6ed4f4
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:37:35 +0800
+
+    docs: update ARCHITECTURE.md with exceptions and bug notes
+
+ ARCHITECTURE.md | 194 ++++++++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 125 insertions(+), 69 deletions(-)
+
+commit 65d9cd56e6a6e769e3a3a499d6414619e4846671
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:52:14 +0800
+
+    docs: add known limitations to ARCHITECTURE.md
+
+ ARCHITECTURE.md | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+commit 1529b12ac4704b5ba8880c1b57302da4fb8caec9
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:53:01 +0800
+
+    test: add aXet's expected-value helper (contains the rounding mistake noted in AI WRONG #2)
+
+ _compute_expected.py | 131 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 131 insertions(+)
+
+commit 10c55712b768367608fdb40f59364a680b02b5b4
+Author: Ravan <ravan.ong@global.ntt>
+Date:   2026-11-06 16:53:16 +0800
+
+    docs: add PROMPT_LOG.md
+
+ PROMPT_LOG.md | 190 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 190 insertions(+)
