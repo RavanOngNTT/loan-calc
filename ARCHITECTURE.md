@@ -4,8 +4,9 @@
 
 `loan-calc` is a pure-Python library (and thin CLI wrapper) for common retail-loan arithmetic.
 It has no external runtime dependencies.
-Everything lives in `loan_calc/calculator.py`; `loan_calc/__init__.py` re-exports everything with `from .calculator import *`.
-There is a `cli.py` at the repo root that is not part of the library itself.
+Everything lives in `loan_calc/calculator.py`; `loan_calc/__init__.py` re-exports all calculator
+functions and the full exception hierarchy. There is a `cli.py` at the repo root that is not part
+of the library itself.
 
 The library answers questions such as:
 - What is my monthly EMI?
@@ -34,17 +35,16 @@ The library answers questions such as:
 ### `_monthly_rate(annual_rate) → float`
 **Private helper.**
 - Input: annual interest rate as a percentage (e.g. 12 for 12 %).
-- Output: monthly rate as a decimal, rounded to 4 decimal places.
-- Formula: `round(annual_rate / 1200, 4)`.
+- Output: monthly rate as a decimal (no additional rounding).
+- Formula: `annual_rate / 1200`.
 - Example: `_monthly_rate(12)` → `0.01`.
-- Precision note: rounding to 4 decimal places loses any sub-0.00005-per-month precision. For very low rates this is noticeable.
 
 ---
 
 ### `emi(principal, annual_rate, tenure_months) → float`
 - Inputs: loan amount, annual rate %, number of monthly instalments.
 - Output: the fixed monthly instalment (EMI) as a float.
-- Calls: `_monthly_rate`.
+- Calls: `_validate_principal`, `_validate_rate`, `_validate_tenure`, `_monthly_rate`.
 - Formula (standard reducing-balance EMI):
   ```
   r = monthly_rate
@@ -52,7 +52,9 @@ The library answers questions such as:
   EMI = principal * r * f / (f - 1)
   ```
   When r == 0 (zero-interest loan): `EMI = principal / tenure_months`.
-- Raises `ValueError` if `tenure_months <= 0` or `principal <= 0`.
+- Raises `InvalidPrincipalError` if principal is not a positive finite number.
+- Raises `InvalidRateError` if annual_rate is not in [0, 100] or is not finite.
+- Raises `InvalidTenureError` if tenure_months is not a positive integer.
 - Precision: one `round(...,2)` at the end.
 
 ---
@@ -70,52 +72,50 @@ The library answers questions such as:
 ---
 
 ### `amortisation_schedule(principal, annual_rate, tenure_months) → list[dict]`
-- Output: a list of row dicts, each with keys `month`, `emi`, `interest`, `principal`, `balance`.
+- Output: a list of exactly `tenure_months` row dicts, each with keys `month`, `emi`, `interest`, `principal`, `balance`. The final row always has `balance == 0.0`.
 - Calls: `_monthly_rate`, `emi`.
-- How it works: starts with `balance = principal`. For each month, computes `interest = balance * r`, `principal_part = emi - interest`, updates `balance`.
+- How it works: starts with `balance = principal`. For each month, computes `interest = balance * r`, `principal_part = emi - interest`, updates `balance`. On the final month, `principal_part` is set to the exact remaining balance so the loan closes cleanly.
 
-**Row-by-row trace for `amortisation_schedule(30000, 12, 3)`:**
+**Row-by-row trace for `amortisation_schedule(30000, 12, 3)`** (verified against current code):
 
 Setup:
-- `r = _monthly_rate(12) = round(12/1200, 4) = 0.01`
-- `instalment = emi(30000, 12, 3)`
-  - `f = (1.01)^3 = 1.030301`
-  - `= round(30000 * 0.01 * 1.030301 / 0.030301, 2)`
-  - `= round(309.0903 / 0.030301, 2)`
-  - `= round(10200.6718…, 2) = 10200.67`
+- `r = _monthly_rate(12) = 12/1200 = 0.01`
+- `instalment = emi(30000, 12, 3) = round(10200.6633…, 2) = 10200.66`
 - `balance = 30000`
-- Loop: `for month in range(1, 3)` → months **1 and 2 only** (see bug below)
+- Loop: `for month in range(1, 4)` → months 1, 2, 3
 
 **Month 1:**
 - `interest = round(30000 * 0.01, 2) = 300.00`
-- `principal_part = round(10200.67 - 300.00, 2) = 9900.67`
-- `month == tenure_months`? 1 == 3? **No** → `instalment_amt = 10200.67`
-- `balance = round(30000 - 9900.67, 2) = 20099.33`
-- Row: `{month:1, emi:10200.67, interest:300.00, principal:9900.67, balance:20099.33}`
+- `principal_part = round(10200.66 - 300.00, 2) = 9900.66`
+- Not final month → `instalment_amt = 10200.66`
+- `balance = round(30000 - 9900.66, 2) = 20099.34`
+- Row: `{month:1, emi:10200.66, interest:300.00, principal:9900.66, balance:20099.34}`
 
 **Month 2:**
-- `interest = round(20099.33 * 0.01, 2) = round(200.9933, 2) = 200.99`
-- `principal_part = round(10200.67 - 200.99, 2) = 9999.68`
-- `month == tenure_months`? 2 == 3? **No** → `instalment_amt = 10200.67`
-- `balance = round(20099.33 - 9999.68, 2) = 10099.65`
-- Row: `{month:2, emi:10200.67, interest:200.99, principal:9999.68, balance:10099.65}`
+- `interest = round(20099.34 * 0.01, 2) = 200.99`
+- `principal_part = round(10200.66 - 200.99, 2) = 9999.67`
+- Not final month → `instalment_amt = 10200.66`
+- `balance = round(20099.34 - 9999.67, 2) = 10099.67`
+- Row: `{month:2, emi:10200.66, interest:200.99, principal:9999.67, balance:10099.67}`
 
-**Month 3: never generated.** `range(1, 3)` stops before 3.
-
-Final returned list has **2 rows**, not 3. The balance after month 2 is 10099.65, not 0.
+**Month 3 (final):**
+- `interest = round(10099.67 * 0.01, 2) = 101.00`
+- Final month → `principal_part = round(10099.67, 2) = 10099.67`, `instalment_amt = round(10099.67 + 101.00, 2) = 10200.67`
+- `balance = round(10099.67 - 10099.67, 2) = 0.0`
+- Row: `{month:3, emi:10200.67, interest:101.00, principal:10099.67, balance:0.0}`
 
 ---
 
 ### `outstanding_after(principal, annual_rate, tenure_months, months_paid) → float`
 - Output: the remaining balance after `months_paid` payments.
 - Calls: `amortisation_schedule`.
-- Returns `principal` if `months_paid <= 0`; `0.0` if `months_paid > len(schedule)`.
-- Because `amortisation_schedule` only generates `tenure_months - 1` rows, `outstanding_after` with `months_paid == tenure_months` returns `0.0` (from the guard) rather than the true final balance.
+- Returns `round(principal, 2)` if `months_paid <= 0`; `0.0` if `months_paid > len(schedule)`.
 
 ---
 
 ### `remaining_tenure(balance, annual_rate, instalment) → int`
 - Output: number of months needed to repay `balance` at the given fixed `instalment`.
+- Calls: `_validate_rate`.
 - Derivation of the formula used:
 
   Starting from the EMI equation:
@@ -124,23 +124,21 @@ Final returned list has **2 rows**, not 3. The balance after month 2 is 10099.65
   ```
   Rearrange to isolate `(1+r)^n`:
   ```
-  EMI * ((1+r)^n - 1) = P * r * (1+r)^n
-  (1+r)^n * (EMI - P*r) = EMI
   (1+r)^n = EMI / (EMI - P*r)
-  n = log(EMI / (EMI - P*r)) / log(1+r)
-     = -log(1 - P*r/EMI) / log(1+r)
+  n = -log(1 - P*r/EMI) / log(1+r)
   ```
-  The code returns `math.ceil(n)`.
+  The code returns `math.ceil(n)`, where `r = annual_rate / 1200` (monthly rate).
 
-**Rate-conversion bug:** the code does `r = annual_rate / 100`, which gives the annual rate as a decimal (e.g. 12 % → 0.12). The formula above requires the **monthly** rate. The correct conversion is `annual_rate / 1200` (e.g. 12 % → 0.01). Using the annual rate makes `balance * r` twelve times too large, the guard `instalment <= balance * r` triggers far too early, and when it does not trigger the computed tenure is wildly wrong.
+- Raises `UnrepayableLoanError` if `instalment <= balance * r`.
 
 ---
 
 ### `prepayment_savings(principal, annual_rate, tenure_months, prepay_month, prepay_amount) → dict`
 - Output: dict with keys `emi`, `months_saved`, `new_tenure`, `interest_saved`, `interest_paid_before_prepayment`.
 - Calls: `emi`, `amortisation_schedule`, `remaining_tenure`, `total_interest`.
-- Logic: take the balance after `prepay_month`, subtract the lump sum, compute new tenure using `remaining_tenure`, compare interest totals.
-- Inherits the `remaining_tenure` rate bug and the `amortisation_schedule` off-by-one.
+- Validation: `prepay_month` must be in `[1, tenure_months]`; `prepay_amount` must be non-negative finite.
+- When `prepay_amount >= balance`, the effective prepayment is capped at `balance` so that excess payment is not counted as interest.
+- `interest_saved = original_interest - new_interest`, where `new_interest = new_total_paid - principal`.
 
 ---
 
@@ -156,7 +154,7 @@ Final returned list has **2 rows**, not 3. The balance after month 2 is 10099.65
 - FOIR (Fixed Obligation to Income Ratio) caps total EMI outflow at `foir * monthly_income`.
 - Available EMI = `monthly_income * foir - existing_emis`.
 - Uses the inverse of the EMI formula to back out the principal.
-- Calls: `_monthly_rate`.
+- Calls: `_validate_rate`, `_validate_tenure`, `_monthly_rate`.
 
 ---
 
@@ -176,55 +174,113 @@ Final returned list has **2 rows**, not 3. The balance after month 2 is 10099.65
 ### `summary(principal, annual_rate, tenure_months, start=None) → dict`
 - Output: a human-readable summary dict with keys `principal`, `rate`, `tenure`, `emi`, `total_interest`, `total_payment`, `last_emi`, `currency`.
 - Calls: `emi`, `total_interest`, `total_payment`, `format_inr`.
-- **`start` argument:** the loan disbursement date (i.e. the date the first EMI period begins). It defaults to `date.today()`. It is used only to compute the `last_emi` field, which is formatted as `"YYYY-MM"` and represents the calendar month in which the final EMI falls. Example: if `start = date(2026, 1, 1)` and `tenure_months = 3`, then `last_emi = "2026-03"`.
+- **`start` argument:** the loan disbursement date (i.e. the date from which the first EMI period
+  begins). It defaults to `date.today()`. It is used only to compute the `last_emi` field, which
+  is formatted as `"YYYY-MM"` and represents the calendar month in which the final EMI falls.
+  - Formula: `end_year = start.year + (start.month - 1 + tenure_months) // 12`; `end_month = (start.month - 1 + tenure_months) % 12 + 1`.
+  - Example: `start = date(2026, 1, 15)`, `tenure_months = 240` → `last_emi = "2046-01"`. *(Verified: `python -c "from datetime import date; from loan_calc import summary; print(summary(1000000,9,240,start=date(2026,1,15))['last_emi'])"` → `2046-01`.)*
+  - Note: `start = date(2026, 1, 1)` with `tenure_months = 3` → `last_emi = "2026-04"` (not `"2026-03"` as originally documented — see Bugs found and fixed below).
 
 ---
 
-## Things that look wrong
+## Errors
 
-### 1. `amortisation_schedule` loop is off by one — the last month is never generated
+The library defines a custom exception hierarchy in `loan_calc/exceptions.py`. All exceptions are
+exported from `loan_calc/__init__.py`.
 
-```python
-for month in range(1, tenure_months):   # stops at tenure_months - 1
+```
+Exception
+└── LoanCalcError                   # base for all loan_calc errors
+    ├── InvalidLoanInputError       # also subclasses ValueError
+    │   ├── InvalidPrincipalError   # principal not a positive finite number
+    │   ├── InvalidRateError        # rate not in [0, 100] or not finite
+    │   ├── InvalidTenureError      # tenure not a positive integer
+    │   └── InvalidPrepaymentError  # prepay_month out of range or prepay_amount negative/NaN
+    └── UnrepayableLoanError        # also subclasses ValueError; instalment too small to repay
 ```
 
-Should be `range(1, tenure_months + 1)`. The dead code inside:
+**Key design decisions:**
+- `InvalidLoanInputError` and `UnrepayableLoanError` both subclass `ValueError` so that existing
+  code that catches `ValueError` continues to work.
+- `emi()` validates all three of its arguments before computing anything; since `amortisation_schedule`,
+  `total_payment`, `total_interest`, and `summary` all call `emi`, they inherit validation for free.
+- `remaining_tenure()` validates `annual_rate` and raises `UnrepayableLoanError` (not bare `ValueError`)
+  when the instalment is too small.
+- `prepayment_savings()` validates `prepay_month` (must be an int in `[1, tenure_months]`) and
+  `prepay_amount` (must be a non-negative finite number) before delegating to `emi`.
+- `eligible_amount()` validates `annual_rate` and `tenure_months` directly.
 
-```python
-if month == tenure_months:   # never True inside this loop
-    principal_part = round(balance, 2)
-    instalment_amt = round(principal_part + interest, 2)
-```
-
-…was intended to handle the last month's rounding, but because the loop never reaches `tenure_months`, this branch is unreachable. As a consequence:
-- The returned schedule is always one row short.
-- The final balance in the last row is not zero (it equals roughly one month's outstanding principal).
-- `outstanding_after` and `prepayment_savings` inherit this error.
+**What is rejected:**
+- NaN or infinity for any numeric argument
+- Python `bool` values (e.g. `True`/`False`) for numeric arguments
+- Non-numeric types (e.g. strings) for numeric arguments
+- `annual_rate` outside `[0, 100]`
+- `tenure_months` that is not a plain positive `int`
+- `prepay_month` outside `[1, tenure_months]`
+- Negative `prepay_amount`
 
 ---
 
-### 2. `remaining_tenure` uses annual rate where monthly rate is required
+## Bugs found and fixed
 
-```python
-r = annual_rate / 100   # gives annual decimal, e.g. 0.12 for 12 %
-```
+### Bug 1 — `_monthly_rate` rounded to 4 decimal places
+**What it was:** `r = round(annual_rate / 1200, 4)` — for rates like 8.5 %, the monthly rate
+(0.007083…) was truncated to 0.0071, an error of ~0.00008/month that compounded to a ~12 rupee
+EMI error over 120 months.
 
-Should be:
+**Fix:** Removed the `round(…, 4)` call. Now `r = annual_rate / 1200` with full float precision.
 
-```python
-r = annual_rate / 1200  # gives monthly decimal, e.g. 0.01 for 12 %
-```
-
-The standard tenure formula requires the same periodicity as the instalment (monthly). Using an annual rate produces a tenure that is not meaningful.
+**Impact:** `emi(1000000, 8.5, 240)` changed from 8690.89 to the correct 8678.23.
 
 ---
 
-### 3. `_monthly_rate` truncates precision at 4 decimal places
+### Bug 2 — `amortisation_schedule` loop was off by one
+**What it was:** `for month in range(1, tenure_months)` — the loop stopped at `tenure_months - 1`,
+so the final month row was never appended. The `if month == tenure_months:` branch inside the loop
+was dead code that could never execute. The schedule was always one row short, and the last
+recorded balance was not zero.
 
-For unusual rates (e.g. 8.75 % → monthly = 0.007291…) rounding to 4 places gives 0.0073, an error of ~0.0001/month. Over a 20-year mortgage this compounds into a visible discrepancy in total interest.
+**Fix:** Changed to `range(1, tenure_months + 1)`. The dead branch now executes for the final
+month: it sets `principal_part = balance` (clearing the exact remaining amount) and computes the
+adjusted final instalment.
+
+**Impact:** `amortisation_schedule(30000, 12, 3)` now returns 3 rows (was 2) and the last row
+has `balance == 0.0`.
 
 ---
 
-### 4. No input validation on most functions
+### Bug 3 — `remaining_tenure` used annual rate where monthly rate is required
+**What it was:** `r = annual_rate / 100` — this gave the annual decimal (e.g. 9 % → 0.09). The
+tenure formula requires the monthly rate (0.0075). With the annual rate, the guard
+`instalment <= balance * r` triggered for every realistic EMI (e.g. 8997.26 ≤ 90 000), so
+`remaining_tenure` always raised `ValueError` for any normal loan.
 
-Only `emi` validates its inputs. Functions like `amortisation_schedule`, `eligible_amount`, and `outstanding_after` accept zero, negative, or nonsensical values without raising errors.
+**Fix:** Changed `annual_rate / 100` to `annual_rate / 1200`.
+
+**Impact:** `remaining_tenure(1000000, 9, 8997.26)` now returns 240 (previously always raised).
+
+---
+
+### Bug 4 — `prepayment_savings` overcounted interest when prepayment exceeded the balance
+**What it was:** When `prepay_amount > balance`, the formula used the full `prepay_amount` in
+`new_total`, counting the excess (the amount beyond what was owed) as interest paid. This made
+`interest_saved` strongly negative for large overpayments.
+
+**Fix:** When `new_balance <= 0` (prepayment clears the loan), the effective prepayment is capped
+at the actual outstanding `balance`. Excess payment is returned to the borrower and is not interest.
+
+**Impact:** `prepayment_savings(1000000, 9, 240, 24, 5000000)` now gives
+`interest_saved = 982619.11 = original_interest − interest_paid_before_prepayment`
+(previously gave -3056591.84).
+
+---
+
+### Documentation error — `summary` start example
+**What it was:** ARCHITECTURE.md originally stated that `start = date(2026, 1, 1)` with
+`tenure_months = 3` gives `last_emi = "2026-03"`.
+
+**What is actually true:** The formula is
+`end_month = (start.month - 1 + tenure_months) % 12 + 1 = (0 + 3) % 12 + 1 = 4`,
+so `last_emi = "2026-04"`. The example was off by one month.
+
+**Verified:** `python -c "from datetime import date; from loan_calc import summary; print(summary(1000000,9,3,start=date(2026,1,1))['last_emi'])"` → `2026-04`.
